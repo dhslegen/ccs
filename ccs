@@ -26,17 +26,24 @@ select(type == "object")
 | select($t | test("^(<system-reminder|<local-command|Caveat: the messages below|\\[Request interrupted)") | not)
 '
 
-# 索引行:项目名 \t 日期 \t sessionId \t 角色 \t 文本(压平截断) \t cwd \t 源文件
-JQ_INDEX="$JQ_COMMON"'
-| [
-    (if (.cwd // "") != "" then (.cwd | split("/") | last) else "?" end),
-    ((.timestamp // "")[5:10]),
-    $sid,
-    (if .type == "user" then "🧑" else "🤖" end),
-    ($t | gsub("[\\r\\n\\t]+"; " ") | .[0:500]),
-    (.cwd // ""),
-    $src
-  ] | join("\t")'
+# 索引行(8 列):项目名 \t 日期 \t sessionId \t 角色 \t 全文(压平) \t cwd \t 源文件 \t 预览行号
+# 用 foreach 跨消息累加行号:每条消息在预览中渲染为 空行+头行+文本行,
+# 头行行号 = 之前所有消息的总行数 + 2,供 fzf --preview-window '+{8}' 直接跳转
+# (与 jq -n 配合使用: inputs 流式读入)
+JQ_INDEX='
+foreach (inputs | '"$JQ_COMMON"' | {type, cwd: (.cwd // ""), ts: (.timestamp // ""), t: $t}) as $m
+  ({total: 0, cur: 0};
+   {cur: (.total + 2), total: (.total + 2 + ($m.t | split("\n") | length))};
+   [
+     (if $m.cwd != "" then ($m.cwd | split("/") | last) else "?" end),
+     ($m.ts[5:10]),
+     $sid,
+     (if $m.type == "user" then "🧑" else "🤖" end),
+     ($m.t | gsub("[\\r\\n\\t]+"; " ")),
+     $m.cwd,
+     $src,
+     (.cur | tostring)
+   ] | join("\t"))'
 
 # 预览:整个会话渲染为带颜色的对话轮次
 JQ_PREVIEW="$JQ_COMMON"'
@@ -66,13 +73,21 @@ check_deps() {
 # 单文件抽取(也供冒烟测试使用: ccs --extract <jsonl> [sid])
 extract_file() {
   local jsonl="$1" sid="${2:-${1:t:r}}"
-  jq -r --arg sid "$sid" --arg src "$jsonl" "$JQ_INDEX" "$jsonl"
+  jq -rn --arg sid "$sid" --arg src "$jsonl" "$JQ_INDEX" "$jsonl"
 }
 
 # 增量更新:mtime 比对,只重建变化的分片;清理源文件已删除的分片
 # 分片命名 <项目目录名>%<sessionId>.tsv ("%" 不会出现在转义后的目录名中)
+INDEX_FORMAT=2   # 索引行格式版本,列结构变化时递增,触发全量重建
+
 update_index() {
   mkdir -p "$INDEX_DIR"
+  local fmt_file="$INDEX_DIR/.format"
+  if [[ ! -f "$fmt_file" || "$(<"$fmt_file")" != "$INDEX_FORMAT" ]]; then
+    rm -rf -- "$INDEX_DIR"
+    mkdir -p "$INDEX_DIR"
+    print "$INDEX_FORMAT" > "$fmt_file"
+  fi
   local shard jsonl sid proj rebuilt=0 total=0
 
   for shard in "$INDEX_DIR"/*.tsv(N); do
@@ -139,24 +154,6 @@ cmd_preview() {
   }
 }
 
-# 计算首个匹配词在渲染后预览中的行号,输出 fzf 动作串使其滚动到窗口中部
-# (纯文本渲染与彩色渲染行结构一致,行号可互用)
-cmd_offset() {
-  local src="${1:-}"; (( $# )) && shift
-  local q="${*:-}"
-  if [[ -z "$q" || ! -f "$src" ]]; then
-    print "change-preview-window:+0"
-    return 0
-  fi
-  local -a pats=()
-  local w
-  for w in ${=q}; do pats+=(-e "$w"); done
-  local n
-  n=$(jq -r "$JQ_PREVIEW_PLAIN" "$src" 2>/dev/null \
-      | rg -inF --max-count=1 "${pats[@]}" | head -1 | cut -d: -f1) || true
-  print "change-preview-window:+${n:-0}/2"
-}
-
 # 完整会话纯文本复制到剪贴板
 cmd_copy() {
   local src="$1"
@@ -182,10 +179,9 @@ main() {
         --prompt='搜索会话> ' \
         --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
         --preview="$SELF --preview {7} {q}" \
-        --preview-window='right:55%:wrap' \
+        --preview-window='right:55%:wrap:+{8}/2' \
         --bind="start:reload:$SELF --grep {q}" \
         --bind="change:reload:$SELF --grep {q}" \
-        --bind="focus:transform:$SELF --offset {7} {q}" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
         --bind="ctrl-t:execute-silent:$SELF --copy {7}" \
         --bind="ctrl-y:execute-silent:printf %s {3} | pbcopy" \
@@ -211,7 +207,6 @@ case "${1:-}" in
   --grep)    shift; cmd_grep "${*:-}" ;;
   --preview) shift; cmd_preview "$@" ;;
   --copy)    shift; cmd_copy "$@" ;;
-  --offset)  shift; cmd_offset "$@" ;;
   --extract) shift; extract_file "$@" ;;
   --update)  check_deps; update_index ;;
   --rebuild) check_deps; rm -rf -- "$INDEX_DIR"; update_index; print "索引已全量重建" ;;
