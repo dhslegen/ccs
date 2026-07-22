@@ -79,6 +79,17 @@ check_deps() {
     fi
     exit 1
   fi
+
+  # fzf 版本门禁:start 事件等特性需 ≥ 0.40,发行版源常见老版本
+  local v major minor
+  v="${$(fzf --version 2>/dev/null)%% *}"
+  major="${v%%.*}"
+  minor="${${v#*.}%%.*}"
+  if (( ${major:-0} == 0 && ${minor:-0} < 40 )); then
+    print -u2 "ccs: fzf 版本过旧($v),需要 ≥ 0.40"
+    print -u2 "     重新运行 install.sh 可自动升级,或手动安装: https://github.com/junegunn/fzf/releases"
+    exit 1
+  fi
 }
 
 # ---------- 索引 ----------

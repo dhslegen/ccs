@@ -74,10 +74,56 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 info "依赖齐全: zsh / fzf / rg / jq"
 
+# ---------- fzf 版本门禁(需 ≥ 0.40,发行版源常见老版本) ----------
+fzf_version_ok() {
+  fv="$(fzf --version 2>/dev/null | awk '{print $1}')"
+  [ -n "$fv" ] || return 1
+  fmaj="${fv%%.*}"; fmin="${fv#*.}"; fmin="${fmin%%.*}"
+  [ "${fmaj:-0}" -gt 0 ] 2>/dev/null || [ "${fmin:-0}" -ge 40 ] 2>/dev/null
+}
+
+install_fzf_binary() {
+  latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/junegunn/fzf/releases/latest)"
+  ver="${latest_url##*/v}"
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64)         arch=amd64 ;;
+    aarch64|arm64)  arch=arm64 ;;
+    *) warn "未适配的架构: $arch,请手动安装新版 fzf: https://github.com/junegunn/fzf/releases"; return 1 ;;
+  esac
+  tmpd="$(mktemp -d)"
+  curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${ver}/fzf-${ver}-linux_${arch}.tar.gz" \
+    | tar -xz -C "$tmpd"
+  $SUDO mkdir -p "$BIN_DIR"
+  $SUDO install -m 755 "$tmpd/fzf" "$BIN_DIR/fzf"
+  rm -rf "$tmpd"
+  info "已安装 fzf v${ver} -> $BIN_DIR/fzf"
+}
+
+if ! fzf_version_ok; then
+  cur="$(fzf --version 2>/dev/null | awk '{print $1}')"
+  warn "fzf 版本过旧(${cur:-未知}),ccs 需要 ≥ 0.40(发行版源的 fzf 通常太老)"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    warn "请执行: brew upgrade fzf"
+    exit 1
+  fi
+  if [ -t 1 ]; then
+    printf '是否从 GitHub 下载官方最新 fzf 二进制到 %s? [Y/n] ' "$BIN_DIR"
+    read -r ans < /dev/tty || ans=n
+    case "$ans" in
+      [nN]*) warn "已跳过,请手动升级 fzf ≥ 0.40 后重试"; exit 1 ;;
+    esac
+    install_fzf_binary || exit 1
+  else
+    warn "请手动升级 fzf ≥ 0.40: https://github.com/junegunn/fzf/releases"
+    exit 1
+  fi
+fi
+
 # 剪贴板工具(可选,缺失只影响 Ctrl-T/Ctrl-Y 复制)
 if ! command -v pbcopy >/dev/null 2>&1 && ! command -v wl-copy >/dev/null 2>&1 \
    && ! command -v xclip >/dev/null 2>&1 && ! command -v xsel >/dev/null 2>&1; then
-  warn "未检测到剪贴板工具(复制功能不可用),建议安装: $(pkg_hint wl-clipboard) 或 xclip"
+  warn "未检测到剪贴板工具(复制功能不可用),建议安装: wl-clipboard 或 xclip($(pkg_cmd) wl-clipboard)"
 fi
 
 # ---------- 安装 ----------
