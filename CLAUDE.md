@@ -31,5 +31,5 @@ fzf 选择后 `claude --resume` 恢复。详细用法与原理见 README.md。
 
 ## 当前状态(2026-07-22)
 
-功能完整可用,已安装(软链 `~/.local/bin/ccs`)。潜在改进:折行导致的
-预览定位微偏、Linux 剪贴板适配。
+功能完整可用,已发布 https://github.com/dhslegen/ccs(install.sh 一键安装,
+剪贴板已适配 macOS/Wayland/X11)。潜在改进:折行导致的预览定位微偏。

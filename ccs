@@ -220,11 +220,30 @@ cmd_preview() {
   }
 }
 
+# 剪贴板抽象:自动适配 macOS(pbcopy)/ Wayland(wl-copy)/ X11(xclip/xsel)
+clipcopy() {
+  if command -v pbcopy >/dev/null; then pbcopy
+  elif command -v wl-copy >/dev/null; then wl-copy
+  elif command -v xclip >/dev/null; then xclip -selection clipboard
+  elif command -v xsel >/dev/null; then xsel --clipboard --input
+  else
+    cat >/dev/null
+    print -u2 "ccs: 未找到剪贴板工具(pbcopy/wl-copy/xclip/xsel)"
+    return 1
+  fi
+}
+
 # 完整会话纯文本复制到剪贴板
 cmd_copy() {
-  local src="$1"
+  local src="${1:-}"
   [[ -f "$src" ]] || return 0
-  jq -r "$JQ_PREVIEW_PLAIN" "$src" 2>/dev/null | pbcopy
+  jq -r "$JQ_PREVIEW_PLAIN" "$src" 2>/dev/null | clipcopy
+}
+
+# sessionId 复制到剪贴板
+cmd_copy_id() {
+  [[ -n "${1:-}" ]] || return 0
+  printf %s "$1" | clipcopy
 }
 
 # ---------- 主交互 ----------
@@ -251,7 +270,7 @@ main() {
         --bind="ctrl-f:change-preview-window(up,90%,wrap,+{8}|right,55%,wrap,+{8})" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
         --bind="ctrl-t:execute-silent:$SELF --copy {7}" \
-        --bind="ctrl-y:execute-silent:printf %s {3} | pbcopy" \
+        --bind="ctrl-y:execute-silent:$SELF --copy-id {3}" \
         --bind="ctrl-p:transform-query(echo {q} ${PWD:t})+reload:$SELF --grep {q}"
   ) || exit 0
 
@@ -275,6 +294,7 @@ case "${1:-}" in
   --grep)    shift; cmd_grep "${*:-}" ;;
   --preview) shift; cmd_preview "$@" ;;
   --copy)    shift; cmd_copy "$@" ;;
+  --copy-id) shift; cmd_copy_id "$@" ;;
   --extract) shift; extract_file "$@" ;;
   --update)  check_deps; update_index ;;
   --rebuild) check_deps; rm -rf -- "$INDEX_DIR"; update_index; print "索引已全量重建" ;;

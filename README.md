@@ -8,17 +8,22 @@
 - **高性能**:启动时增量抽取纯文本索引(mtime 比对,无变化时约 30ms),每次按键只 rg 扫几 MB 索引
 - **只搜对话**:仅索引你和 Claude 的消息文本,过滤工具输出、system-reminder、hook 等噪声
 - **预览**:右侧实时渲染完整会话对话轮次,关键词高亮
-- **零新依赖**:只用 fzf(≥0.40)、ripgrep、jq
-
-> 运行环境:macOS + zsh(复制功能用 pbcopy;Linux 可自行替换为 xclip/wl-copy)
+- **跨平台**:macOS / Linux;剪贴板自动适配 pbcopy(macOS)、wl-copy(Wayland)、xclip/xsel(X11)
+- **零构建**:单文件 zsh 脚本,依赖只有 fzf(≥0.40)、ripgrep、jq
 
 ## 安装
 
+一键安装(自动检测依赖并给出安装提示,装到 `~/.local/bin`):
+
 ```bash
-ln -s ~/Developer/Personal/ccs/ccs ~/.local/bin/ccs
+curl -fsSL https://raw.githubusercontent.com/dhslegen/ccs/main/install.sh | bash
 ```
 
-(确保 `~/.local/bin` 在 `PATH` 中)
+或克隆后本地安装(软链方式,`git pull` 即更新):
+
+```bash
+git clone https://github.com/dhslegen/ccs.git && cd ccs && ./install.sh
+```
 
 ## 用法
 
