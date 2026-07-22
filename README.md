@@ -15,7 +15,8 @@
 
 ## 安装
 
-一键安装(自动检测依赖并给出安装提示,装到 `~/.local/bin`):
+一键安装(缺依赖时询问并自动安装;安装位置自动挑选已在 PATH 中的目录:
+`~/.local/bin` → `/usr/local/bin` → 回退时主动帮你把 PATH 写进 shell 配置):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dhslegen/ccs/main/install.sh | bash

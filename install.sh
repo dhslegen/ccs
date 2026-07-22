@@ -5,7 +5,25 @@
 set -euo pipefail
 
 RAW_URL="https://raw.githubusercontent.com/dhslegen/ccs/main/ccs"
-BIN_DIR="${CCS_BIN_DIR:-$HOME/.local/bin}"
+
+# 安装目录选择:优先已在 PATH 中的位置,减少用户手动配 PATH 的负担
+# 1) CCS_BIN_DIR 显式指定 > 2) ~/.local/bin(已在 PATH) > 3) /usr/local/bin(已在 PATH) > 4) 回退 ~/.local/bin
+pick_bin_dir() {
+  if [ -n "${CCS_BIN_DIR:-}" ]; then echo "$CCS_BIN_DIR"; return; fi
+  case ":$PATH:" in *":$HOME/.local/bin:"*) echo "$HOME/.local/bin"; return ;; esac
+  case ":$PATH:" in *":/usr/local/bin:"*)   echo "/usr/local/bin";   return ;; esac
+  echo "$HOME/.local/bin"
+}
+BIN_DIR="$(pick_bin_dir)"
+
+# 目标目录不可写时借 sudo(如普通用户装 /usr/local/bin;家目录内永不需要)
+SUDO=""
+if [[ "$BIN_DIR" != "$HOME"/* ]]; then
+  if { [ -d "$BIN_DIR" ] && [ ! -w "$BIN_DIR" ]; } \
+     || { [ ! -d "$BIN_DIR" ] && [ ! -w "$(dirname "$BIN_DIR")" ]; }; then
+    command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+  fi
+fi
 
 info() { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!\033[0m %s\n' "$*"; }
@@ -63,7 +81,7 @@ if ! command -v pbcopy >/dev/null 2>&1 && ! command -v wl-copy >/dev/null 2>&1 \
 fi
 
 # ---------- 安装 ----------
-mkdir -p "$BIN_DIR"
+$SUDO mkdir -p "$BIN_DIR"
 
 script_dir=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
@@ -71,19 +89,43 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
 fi
 
 if [ -n "$script_dir" ] && [ -f "$script_dir/ccs" ]; then
-  ln -sf "$script_dir/ccs" "$BIN_DIR/ccs"
+  $SUDO ln -sf "$script_dir/ccs" "$BIN_DIR/ccs"
   info "已软链: $BIN_DIR/ccs -> $script_dir/ccs(git pull 即更新)"
 else
-  curl -fsSL "$RAW_URL" -o "$BIN_DIR/ccs"
-  chmod +x "$BIN_DIR/ccs"
+  tmp="$(mktemp)"
+  curl -fsSL "$RAW_URL" -o "$tmp"
+  $SUDO install -m 755 "$tmp" "$BIN_DIR/ccs"
+  rm -f "$tmp"
   info "已下载安装: $BIN_DIR/ccs"
 fi
 
-# ---------- PATH 检查 ----------
+# ---------- PATH 收尾 ----------
 case ":$PATH:" in
-  *":$BIN_DIR:"*) info "安装完成,直接运行: ccs" ;;
+  *":$BIN_DIR:"*)
+    info "安装完成,直接运行: ccs"
+    ;;
   *)
-    warn "$BIN_DIR 不在 PATH 中,请在 shell 配置(~/.zshrc 等)中追加:"
-    printf '    export PATH="%s:$PATH"\n' "$BIN_DIR"
+    # 仅回退分支会走到这里(PATH 中既无 ~/.local/bin 也无 /usr/local/bin)
+    export_line="export PATH=\"$BIN_DIR:\$PATH\""
+    rc=""
+    case "$(basename "${SHELL:-}")" in
+      zsh)  rc="$HOME/.zshrc" ;;
+      bash) rc="$HOME/.bashrc" ;;
+    esac
+    if [ -n "$rc" ] && [ -t 1 ]; then
+      printf '%s 不在 PATH 中,是否自动追加到 %s? [Y/n] ' "$BIN_DIR" "$rc"
+      read -r ans < /dev/tty || ans=n
+      case "$ans" in
+        [nN]*)
+          warn "已跳过,请手动追加: $export_line"
+          ;;
+        *)
+          printf '\n# ccs (由 install.sh 追加)\n%s\n' "$export_line" >> "$rc"
+          info "已追加到 $rc,重开终端或执行 source $rc 后运行: ccs"
+          ;;
+      esac
+    else
+      warn "$BIN_DIR 不在 PATH 中,请在 shell 配置中追加: $export_line"
+    fi
     ;;
 esac
