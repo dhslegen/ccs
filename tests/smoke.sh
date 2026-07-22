@@ -14,6 +14,7 @@ cat > "$FIXTURE" <<'EOF'
 {"type":"user","cwd":"/Users/demo/proj-a","timestamp":"2026-07-22T10:03:00.000Z","isMeta":true,"message":{"role":"user","content":"meta 噪声"}}
 {"type":"user","cwd":"/Users/demo/proj-a","timestamp":"2026-07-22T10:04:00.000Z","message":{"role":"user","content":[{"type":"text","text":"<command-message>foo</command-message><command-args>真实命令意图</command-args>"}]}}
 {"type":"summary","summary":"会话摘要噪声"}
+{"type":"user","cwd":"/Users/demo/proj-a","timestamp":"2026-07-22T10:04:30.000Z","message":{"role":"user","content":[{"type":"text","text":"<task-notification>\n<task-id>abc123</task-id>\n<status>completed</status>\n</task-notification>"}]}}
 {"type":"user","cwd":"/Users/demo/proj-a","timestamp":"2026-07-22T10:05:00.000Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}
 EOF
 
@@ -40,7 +41,7 @@ offsets="$(print -r -- "$out" | cut -f8 | paste -sd, -)"
 [[ "$offsets" == "2,5,9" ]] || fail "预览行号错误: 期望 2,5,9 实际 $offsets"
 
 # 5. 噪声不应出现
-for noise in "file contents noise" "内部提醒噪声" "meta 噪声" "会话摘要噪声" "Request interrupted"; do
+for noise in "file contents noise" "内部提醒噪声" "meta 噪声" "会话摘要噪声" "Request interrupted" "task-notification"; do
   print -r -- "$out" | grep -q "$noise" && fail "噪声泄漏: $noise"
 done
 

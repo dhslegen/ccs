@@ -23,7 +23,7 @@ select(type == "object")
    | gsub("</?command-(message|name|args)>"; " ")
    | gsub("^\\s+|\\s+$"; "")) as $t
 | select(($t | gsub("\\s"; "") | length) > 0)
-| select($t | test("^(<system-reminder|<local-command|Caveat: the messages below|\\[Request interrupted)") | not)
+| select($t | test("^(<system-reminder|<local-command|<task-notification|Caveat: the messages below|\\[Request interrupted)") | not)
 '
 
 # 索引行(8 列):项目名 \t 日期 \t sessionId \t 角色 \t 全文(压平) \t cwd \t 源文件 \t 预览行号
@@ -78,7 +78,7 @@ extract_file() {
 
 # 增量更新:mtime 比对,只重建变化的分片;清理源文件已删除的分片
 # 分片命名 <项目目录名>%<sessionId>.tsv ("%" 不会出现在转义后的目录名中)
-INDEX_FORMAT=2   # 索引行格式版本,列结构变化时递增,触发全量重建
+INDEX_FORMAT=3   # 索引格式/过滤规则版本,变化时递增,触发全量重建
 
 update_index() {
   mkdir -p "$INDEX_DIR"
@@ -120,19 +120,24 @@ cmd_list() {
   return 0
 }
 
-# 多关键词 AND 过滤:每个词一层 rg(固定字符串、忽略大小写),顺序保持时间倒序
-_and_filter() {
-  if (( $# == 0 )); then
-    cat
-  else
-    local w="$1"; shift
-    rg -iF -- "$w" | _and_filter "$@"
-  fi
-}
-
+# 多关键词 AND 过滤 + 去重:
+# - 只在可见列(项目/日期/角色/文本)内匹配,避免 sessionId/路径等隐藏列造成假命中
+# - 相同 项目+角色+文本 的行只保留第一条(列表按时间倒序,即保留最新会话;
+#   resume 会复制历史到新 sessionId 文件,同一消息会出现在多个会话中)
+# - tolower 仅对 ASCII 生效,即英文忽略大小写,中文不受影响
 cmd_grep() {
   local q="${1:-}"
-  cmd_list | _and_filter ${=q} || true
+  cmd_list | awk -F'\t' -v q="$q" '
+    BEGIN { n = split(tolower(q), ws, /[ \t]+/) }
+    {
+      hay = tolower($1 FS $2 FS $4 FS $5)
+      ok = 1
+      for (i = 1; i <= n; i++)
+        if (ws[i] != "" && index(hay, ws[i]) == 0) { ok = 0; break }
+      if (!ok) next
+      key = $1 FS $4 FS $5
+      if (!seen[key]++) print
+    }'
 }
 
 # ---------- 预览 ----------
