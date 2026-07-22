@@ -120,14 +120,28 @@ cmd_list() {
   return 0
 }
 
-# 多关键词 AND 过滤 + 去重:
+# rg 粗筛链:每个词一层 rg 整行匹配(固定字符串、忽略大小写)。
+# 整行匹配会连隐藏列一起算,可能放过假命中,但只作候选集收缩,精确性由 awk 保证
+_rg_chain() {
+  if (( $# == 1 )); then
+    rg -iF -- "$1" || true
+  else
+    local w="$1"; shift
+    { rg -iF -- "$w" || true } | _rg_chain "$@"
+  fi
+}
+
+# 多关键词 AND 过滤 + 去重:rg 粗筛收缩候选集,awk 精筛保证语义
 # - 只在可见列(项目/日期/角色/文本)内匹配,避免 sessionId/路径等隐藏列造成假命中
 # - 相同 项目+角色+文本 的行只保留第一条(列表按时间倒序,即保留最新会话;
 #   resume 会复制历史到新 sessionId 文件,同一消息会出现在多个会话中)
 # - tolower 仅对 ASCII 生效,即英文忽略大小写,中文不受影响
 cmd_grep() {
   local q="${1:-}"
-  cmd_list | awk -F'\t' -v q="$q" '
+  local -a words=(${=q})
+  cmd_list \
+  | { if (( ${#words} )); then _rg_chain "${words[@]}"; else cat; fi } \
+  | awk -F'\t' -v q="$q" '
     BEGIN { n = split(tolower(q), ws, /[ \t]+/) }
     {
       hay = tolower($1 FS $2 FS $4 FS $5)
@@ -184,7 +198,7 @@ main() {
         --prompt='搜索会话> ' \
         --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
         --preview="$SELF --preview {7} {q}" \
-        --preview-window='right:55%:wrap:+{8}/2' \
+        --preview-window='right:55%:wrap:+{8}' \
         --bind="start:reload:$SELF --grep {q}" \
         --bind="change:reload:$SELF --grep {q}" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
