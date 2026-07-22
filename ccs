@@ -130,11 +130,31 @@ cmd_preview() {
       local -a pats=()
       local w
       for w in ${=q}; do pats+=(-e "$w"); done
-      rg --passthru --color=always -iF "${pats[@]}" || true
+      rg --passthru --color=always \
+         --colors=match:bg:yellow --colors=match:fg:black --colors=match:style:bold \
+         -iF "${pats[@]}" || true
     else
       cat
     fi
   }
+}
+
+# 计算首个匹配词在渲染后预览中的行号,输出 fzf 动作串使其滚动到窗口中部
+# (纯文本渲染与彩色渲染行结构一致,行号可互用)
+cmd_offset() {
+  local src="${1:-}"; (( $# )) && shift
+  local q="${*:-}"
+  if [[ -z "$q" || ! -f "$src" ]]; then
+    print "change-preview-window:+0"
+    return 0
+  fi
+  local -a pats=()
+  local w
+  for w in ${=q}; do pats+=(-e "$w"); done
+  local n
+  n=$(jq -r "$JQ_PREVIEW_PLAIN" "$src" 2>/dev/null \
+      | rg -inF --max-count=1 "${pats[@]}" | head -1 | cut -d: -f1) || true
+  print "change-preview-window:+${n:-0}/2"
 }
 
 # 完整会话纯文本复制到剪贴板
@@ -153,7 +173,6 @@ main() {
   local line
   line=$(
     fzf --disabled \
-        --no-mouse \
         --ansi \
         --query="$initial" \
         --delimiter=$'\t' \
@@ -161,11 +180,12 @@ main() {
         --tabstop=2 \
         --no-sort \
         --prompt='搜索会话> ' \
-        --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ ⇧↑↓ 滚动预览 │ 鼠标可直接框选复制' \
+        --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
         --preview="$SELF --preview {7} {q}" \
         --preview-window='right:55%:wrap' \
         --bind="start:reload:$SELF --grep {q}" \
         --bind="change:reload:$SELF --grep {q}" \
+        --bind="focus:transform:$SELF --offset {7} {q}" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
         --bind="ctrl-t:execute-silent:$SELF --copy {7}" \
         --bind="ctrl-y:execute-silent:printf %s {3} | pbcopy" \
@@ -191,6 +211,7 @@ case "${1:-}" in
   --grep)    shift; cmd_grep "${*:-}" ;;
   --preview) shift; cmd_preview "$@" ;;
   --copy)    shift; cmd_copy "$@" ;;
+  --offset)  shift; cmd_offset "$@" ;;
   --extract) shift; extract_file "$@" ;;
   --update)  check_deps; update_index ;;
   --rebuild) check_deps; rm -rf -- "$INDEX_DIR"; update_index; print "索引已全量重建" ;;
