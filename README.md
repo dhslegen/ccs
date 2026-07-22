@@ -10,6 +10,8 @@
 - **预览**:右侧实时渲染完整会话对话轮次,关键词高亮
 - **零新依赖**:只用 fzf(≥0.40)、ripgrep、jq
 
+> 运行环境:macOS + zsh(复制功能用 pbcopy;Linux 可自行替换为 xclip/wl-copy)
+
 ## 安装
 
 ```bash
@@ -60,15 +62,15 @@ ccs --update      # 仅增量更新索引(可挂 cron)
         │ 启动时增量抽取(jq,只处理 mtime 变化的文件)
         ▼
 ~/.cache/ccs/index/<项目>%<sessionId>.tsv        (纯文本索引分片,继承源文件 mtime)
-        │ fzf --disabled + change:reload(rg 多词 AND 过滤)
+        │ fzf --disabled + change:reload(rg 粗筛 → awk 精筛:可见列 AND + 去重)
         ▼
 实时列表 + 右侧预览 → ⏎ cd 项目 && claude --resume
 ```
 
 索引行格式(TAB 分隔):`项目名 日期 sessionId 角色 消息全文 cwd 源文件路径 预览行号`,
 fzf 只展示前 4 列可见信息,后 4 列供动作使用:第 8 列是该消息在渲染后预览中的行号
-(索引时用 jq foreach 跨消息累加算出),`--preview-window '+{8}/2'` 据此把选中消息
-滚动到预览窗口正中——选中同一会话的不同消息,预览会分别跳到各自位置。
+(索引时用 jq foreach 跨消息累加算出),`--preview-window '+{8}'` 据此把选中消息
+锚定到预览窗口顶部——选中同一会话的不同消息,预览会分别跳到各自位置。
 
 消息全文入索引、不截断,保证从预览里看到的任何一句话都能搜到;
 索引格式版本变化时(`.format` 文件)自动全量重建。
