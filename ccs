@@ -243,11 +243,12 @@ main() {
         --tabstop=2 \
         --no-sort \
         --prompt='搜索会话> ' \
-        --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
+        --header='⏎ 恢复会话 │ ^O 全文 │ ^F 预览全屏 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
         --preview="$SELF --preview {7} {q}" \
         --preview-window='right:55%:wrap:+{8}' \
         --bind="start:reload:$SELF --grep {q}" \
         --bind="change:reload:$SELF --grep {q}" \
+        --bind="ctrl-f:change-preview-window(up,90%,wrap,+{8}|right,55%,wrap,+{8})" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
         --bind="ctrl-t:execute-silent:$SELF --copy {7}" \
         --bind="ctrl-y:execute-silent:printf %s {3} | pbcopy" \
@@ -290,6 +291,7 @@ ccs — Claude Code 会话搜索
 键位:
   ⏎        cd 到项目目录并恢复该会话 (claude --resume)
   Ctrl-O   全屏查看完整会话
+  Ctrl-F   预览窗口全屏/还原切换(方便鼠标选取预览文本)
   Ctrl-T   复制完整会话纯文本到剪贴板
   Ctrl-Y   复制 sessionId 到剪贴板
   Ctrl-P   把当前项目名加入搜索词
