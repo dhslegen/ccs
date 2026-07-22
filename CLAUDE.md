@@ -18,6 +18,7 @@ fzf 选择后 `claude --resume` 恢复。详细用法与原理见 README.md。
 
 - 纯 zsh + jq + ripgrep + fzf + awk,无包管理器、无构建
 - `ccs` — 全部逻辑(jq 程序、索引器、fzf 交互都在这一个文件)
+- `install.sh` — 一键安装(bash;远程 curl 下载 / 本地仓库软链双模式)
 - `tests/smoke.sh` — 用 fixture jsonl 断言抽取行为
 - 索引缓存在 `~/.cache/ccs/index/`,每会话一个 8 列 TSV 分片
 
