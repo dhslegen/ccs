@@ -35,6 +35,7 @@ ccs --update      # 仅增量更新索引(可挂 cron)
 |---|---|
 | `⏎` | cd 到项目目录并 `claude --resume` 该会话 |
 | `Ctrl-O` | 全屏查看完整会话 |
+| `Ctrl-T` | 复制完整会话纯文本到剪贴板 |
 | `Ctrl-Y` | 复制 sessionId 到剪贴板 |
 | `Ctrl-P` | 把当前项目名追加进搜索词 |
 | `Esc` | 退出 |

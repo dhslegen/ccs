@@ -45,6 +45,10 @@ JQ_PREVIEW="$JQ_COMMON"'
    else "\n[1;33m🤖 Claude[0m"
    end) + "\n" + $t'
 
+# 复制用:同预览但纯文本、无 ANSI 颜色码
+JQ_PREVIEW_PLAIN="$JQ_COMMON"'
+| (if .type == "user" then "\n🧑 我" else "\n🤖 Claude" end) + "\n" + $t'
+
 # ---------- 依赖检查 ----------
 check_deps() {
   local dep missing=()
@@ -133,6 +137,13 @@ cmd_preview() {
   }
 }
 
+# 完整会话纯文本复制到剪贴板
+cmd_copy() {
+  local src="$1"
+  [[ -f "$src" ]] || return 0
+  jq -r "$JQ_PREVIEW_PLAIN" "$src" 2>/dev/null | pbcopy
+}
+
 # ---------- 主交互 ----------
 main() {
   check_deps
@@ -149,12 +160,13 @@ main() {
         --tabstop=2 \
         --no-sort \
         --prompt='搜索会话> ' \
-        --header='⏎ 恢复会话 │ ^O 全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
+        --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
         --preview="$SELF --preview {7} {q}" \
         --preview-window='right:55%:wrap' \
         --bind="start:reload:$SELF --grep {q}" \
         --bind="change:reload:$SELF --grep {q}" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
+        --bind="ctrl-t:execute-silent:$SELF --copy {7}" \
         --bind="ctrl-y:execute-silent:printf %s {3} | pbcopy" \
         --bind="ctrl-p:transform-query(echo {q} ${PWD:t})+reload:$SELF --grep {q}"
   ) || exit 0
@@ -177,6 +189,7 @@ main() {
 case "${1:-}" in
   --grep)    shift; cmd_grep "${*:-}" ;;
   --preview) shift; cmd_preview "$@" ;;
+  --copy)    shift; cmd_copy "$@" ;;
   --extract) shift; extract_file "$@" ;;
   --update)  check_deps; update_index ;;
   --rebuild) check_deps; rm -rf -- "$INDEX_DIR"; update_index; print "索引已全量重建" ;;
@@ -193,6 +206,7 @@ ccs — Claude Code 会话搜索
 键位:
   ⏎        cd 到项目目录并恢复该会话 (claude --resume)
   Ctrl-O   全屏查看完整会话
+  Ctrl-T   复制完整会话纯文本到剪贴板
   Ctrl-Y   复制 sessionId 到剪贴板
   Ctrl-P   把当前项目名加入搜索词
 EOF
