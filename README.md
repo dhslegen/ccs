@@ -2,6 +2,8 @@
 
 按关键词实时搜索 Claude Code 历史会话,fzf 交互选择后一键恢复(`claude --resume`)。
 
+![ccs 实时搜索与预览高亮](image.png)
+
 ## 特性
 
 - **实时搜索**:fzf 内边打字边搜,多个关键词为 AND 关系,中文友好
