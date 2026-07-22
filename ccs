@@ -30,17 +30,25 @@ select(type == "object")
 # 用 foreach 跨消息累加行号:每条消息在预览中渲染为 空行+头行+文本行,
 # 头行行号 = 之前所有消息的总行数 + 2,供 fzf --preview-window '+{8}' 直接跳转
 # (与 jq -n 配合使用: inputs 流式读入)
+# 项目名/恢复目录统一取会话最后一个非空 cwd($home):
+# /cd 会让 Claude Code 把会话文件搬到新项目目录,恢复会话必须去最终 cwd;
+# 且项目名逐条漂移会破坏列表的项目分组,故整个会话统一钉在 $home 上。
+# 先 slurp 全部消息取 $home,再 foreach 累加预览行号输出
 JQ_INDEX='
-foreach (inputs | '"$JQ_COMMON"' | {type, cwd: (.cwd // ""), ts: (.timestamp // ""), t: $t}) as $m
+[inputs | '"$JQ_COMMON"' | {type, cwd: (.cwd // ""), ts: (.timestamp // ""), t: $t}] as $msgs
+| ([$msgs[].cwd | select(. != "")] | last // "") as $home
+| (if $home != "" then ($home | split("/") | last) else "?" end) as $proj
+| foreach $msgs[] as $m
   ({total: 0, cur: 0};
-   {cur: (.total + 2), total: (.total + 2 + ($m.t | split("\n") | length))};
+   {cur: (.total + 2),
+    total: (.total + 2 + ($m.t | split("\n") | length))};
    [
-     (if $m.cwd != "" then ($m.cwd | split("/") | last) else "?" end),
+     $proj,
      ($m.ts[5:10]),
      $sid,
      (if $m.type == "user" then "🧑" else "🤖" end),
      ($m.t | gsub("[\\r\\n\\t]+"; " ")),
-     $m.cwd,
+     $home,
      $src,
      (.cur | tostring)
    ] | join("\t"))'
@@ -78,7 +86,7 @@ extract_file() {
 
 # 增量更新:mtime 比对,只重建变化的分片;清理源文件已删除的分片
 # 分片命名 <项目目录名>%<sessionId>.tsv ("%" 不会出现在转义后的目录名中)
-INDEX_FORMAT=3   # 索引格式/过滤规则版本,变化时递增,触发全量重建
+INDEX_FORMAT=5   # 索引格式/过滤规则版本,变化时递增,触发全量重建
 
 update_index() {
   mkdir -p "$INDEX_DIR"
@@ -113,11 +121,48 @@ update_index() {
 }
 
 # ---------- 列表与搜索 ----------
-# 全部索引行,按会话 mtime 倒序(zsh glob 限定符 om = 按修改时间降序)
+# 会话分割线:8 列结构,sessionId 列(第3列)为空作为分隔行标记,供 awk/回车识别
+SEP_DIM=$'\e[2m'
+SEP_RST=$'\e[0m'
+SEP_LINE="${SEP_DIM}┄┄┄┄┄┄┄┄${SEP_RST}"$'\t\t\t\t'"${SEP_DIM}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${SEP_RST}"$'\t\t\t1'
+
+# 全部索引行,排序规则(fzf 列表自底向上增长,流中越靠前显示越靠底):
+# 1. 项目分组不穿插,按项目最近活跃度排序,最新项目在流首(=屏幕最底,紧贴光标)
+# 2. 项目内会话按 mtime 降序,最新会话靠底
+# 3. 会话内消息倒序,最新消息靠底 —— 整个列表自底向上 = 由新到旧
+# 4. 会话之间插入分割线
 cmd_list() {
   local -a shards=("$INDEX_DIR"/*.tsv(Nom))
-  (( ${#shards} )) && cat -- "${shards[@]}"
-  return 0
+  (( ${#shards} )) || return 0
+
+  # 分组键 = 分片首行的项目名(第 1 列,即 cwd basename)——这是用户看到的"项目"。
+  # 不能用分片目录名:同一转义目录下不同子目录启动的会话,显示的项目名并不相同。
+  # shards 已按 mtime 降序,项目首次出现的位置即该项目最新会话 → 得到项目活跃度顺序
+  local -A contents=() proj_of=()
+  local -A seen_proj=()
+  local -a proj_order=() valid=()
+  local s p content
+  for s in "${shards[@]}"; do
+    content="$(<"$s")"
+    [[ -n "$content" ]] || continue
+    p="${${content%%$'\n'*}%%$'\t'*}"
+    contents[$s]="$content"
+    proj_of[$s]="$p"
+    valid+=("$s")
+    [[ -n "${seen_proj[$p]:-}" ]] || { seen_proj[$p]=1; proj_order+=("$p"); }
+  done
+
+  local first=1
+  local -a msg_lines
+  for p in "${proj_order[@]}"; do
+    for s in "${valid[@]}"; do
+      [[ "${proj_of[$s]}" == "$p" ]] || continue
+      (( first )) || print -r -- "$SEP_LINE"
+      first=0
+      msg_lines=("${(@f)contents[$s]}")
+      print -rl -- "${(@Oa)msg_lines}"   # 倒序:会话内最新消息在前(=显示靠底)
+    done
+  done
 }
 
 # rg 粗筛链:每个词一层 rg 整行匹配(固定字符串、忽略大小写)。
@@ -143,6 +188,7 @@ cmd_grep() {
   | { if (( ${#words} )); then _rg_chain "${words[@]}"; else cat; fi } \
   | awk -F'\t' -v q="$q" '
     BEGIN { n = split(tolower(q), ws, /[ \t]+/) }
+    $3 == "" { if (n == 0) print; next }   # 分隔行:浏览时保留,搜索时丢弃,不去重
     {
       hay = tolower($1 FS $2 FS $4 FS $5)
       ok = 1
@@ -156,8 +202,9 @@ cmd_grep() {
 
 # ---------- 预览 ----------
 cmd_preview() {
-  local src="$1"; shift
+  local src="${1:-}"; (( $# )) && shift
   local q="${*:-}"
+  [[ -n "$src" ]] || return 0   # 分隔行无源文件,预览留空
   [[ -f "$src" ]] || { print "源文件不存在: $src"; return 0; }
   jq -r "$JQ_PREVIEW" "$src" 2>/dev/null | {
     if [[ -n "$q" ]]; then
@@ -210,6 +257,7 @@ main() {
   local sid cwd
   sid="$(cut -f3 <<<"$line")"
   cwd="$(cut -f6 <<<"$line")"
+  [[ -z "$sid" ]] && exit 0   # 选中的是分隔行,静默退出
 
   if [[ -n "$cwd" && -d "$cwd" ]]; then
     cd "$cwd"
