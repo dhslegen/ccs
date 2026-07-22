@@ -153,6 +153,7 @@ main() {
   local line
   line=$(
     fzf --disabled \
+        --no-mouse \
         --ansi \
         --query="$initial" \
         --delimiter=$'\t' \
@@ -160,7 +161,7 @@ main() {
         --tabstop=2 \
         --no-sort \
         --prompt='搜索会话> ' \
-        --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ Esc 退出' \
+        --header='⏎ 恢复会话 │ ^O 全文 │ ^T 复制全文 │ ^Y 复制ID │ ^P 当前项目 │ ⇧↑↓ 滚动预览 │ 鼠标可直接框选复制' \
         --preview="$SELF --preview {7} {q}" \
         --preview-window='right:55%:wrap' \
         --bind="start:reload:$SELF --grep {q}" \
