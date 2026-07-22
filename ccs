@@ -273,6 +273,7 @@ main() {
         --bind="change:reload:$SELF --grep {q}" \
         --bind="ctrl-f:change-preview-window(up,90%,wrap,+{8}|right,55%,wrap,+{8})" \
         --bind="ctrl-o:execute:$SELF --preview {7} {q} | less -R" \
+        --bind="double-click:execute:$SELF --preview {7} {q} | less -R" \
         --bind="ctrl-t:execute-silent:$SELF --copy {7}" \
         --bind="ctrl-y:execute-silent:$SELF --copy-id {3}" \
         --bind="ctrl-p:transform-query(echo {q} ${PWD:t})+reload:$SELF --grep {q}"
@@ -315,7 +316,7 @@ ccs — Claude Code 会话搜索
 
 键位:
   ⏎        cd 到项目目录并恢复该会话 (claude --resume)
-  Ctrl-O   全屏查看完整会话
+  Ctrl-O   全屏查看完整会话(双击列表行等价)
   Ctrl-F   预览窗口全屏/还原切换(方便鼠标选取预览文本)
   Ctrl-T   复制完整会话纯文本到剪贴板
   Ctrl-Y   复制 sessionId 到剪贴板

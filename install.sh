@@ -10,26 +10,49 @@ BIN_DIR="${CCS_BIN_DIR:-$HOME/.local/bin}"
 info() { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!\033[0m %s\n' "$*"; }
 
-# ---------- 依赖检测 ----------
-pkg_hint() {
-  if command -v brew >/dev/null 2>&1;   then echo "brew install $*"
-  elif command -v apt-get >/dev/null 2>&1; then echo "sudo apt install $*"
-  elif command -v dnf >/dev/null 2>&1;  then echo "sudo dnf install $*"
-  elif command -v pacman >/dev/null 2>&1; then echo "sudo pacman -S $*"
-  else echo "请用你的包管理器安装: $*"
+# ---------- 依赖检测与自动安装 ----------
+# 返回本机包管理器的安装命令前缀;无已知包管理器时返回空
+pkg_cmd() {
+  if command -v brew >/dev/null 2>&1;      then echo "brew install"
+  elif command -v apt-get >/dev/null 2>&1; then echo "sudo apt install -y"
+  elif command -v dnf >/dev/null 2>&1;     then echo "sudo dnf install -y"
+  elif command -v pacman >/dev/null 2>&1;  then echo "sudo pacman -S --noconfirm"
   fi
 }
 
-missing=()
-for dep in zsh fzf jq; do
-  command -v "$dep" >/dev/null 2>&1 || missing+=("$dep")
-done
-command -v rg >/dev/null 2>&1 || missing+=("ripgrep")
+check_missing() {
+  missing=()
+  for dep in zsh fzf jq; do
+    command -v "$dep" >/dev/null 2>&1 || missing+=("$dep")
+  done
+  command -v rg >/dev/null 2>&1 || missing+=("ripgrep")
+}
 
+check_missing
 if [ "${#missing[@]}" -gt 0 ]; then
+  pm="$(pkg_cmd)"
+  if [ -z "$pm" ]; then
+    warn "缺少依赖: ${missing[*]},请用你的包管理器安装后重试"
+    exit 1
+  fi
   warn "缺少依赖: ${missing[*]}"
-  warn "先执行: $(pkg_hint "${missing[@]}")"
-  exit 1
+  # curl | bash 时 stdin 是脚本管道,交互必须读 /dev/tty;无终端(CI)则只提示
+  if [ -t 1 ]; then
+    printf '是否现在执行「%s %s」自动安装? [Y/n] ' "$pm" "${missing[*]}"
+    read -r ans < /dev/tty || ans=n
+    case "$ans" in
+      [nN]*) warn "已跳过,先执行: $pm ${missing[*]}"; exit 1 ;;
+    esac
+    $pm "${missing[@]}"
+    check_missing
+    if [ "${#missing[@]}" -gt 0 ]; then
+      warn "自动安装后仍缺少: ${missing[*]},请手动处理后重试"
+      exit 1
+    fi
+  else
+    warn "先执行: $pm ${missing[*]}"
+    exit 1
+  fi
 fi
 info "依赖齐全: zsh / fzf / rg / jq"
 
